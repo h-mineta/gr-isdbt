@@ -12,6 +12,25 @@
 include(GrPlatform) #define LIB_SUFFIX
 
 list(APPEND isdbt_sources
+    ofdm_synchronization_impl.cc
+    tmcc_decoder_impl.cc
+    frequency_deinterleaver_impl.cc
+    time_deinterleaver_impl.cc
+    symbol_demapper_impl.cc
+    bit_deinterleaver_impl.cc
+    viterbi_decoder_impl.cc
+    byte_deinterleaver_impl.cc
+    energy_descrambler_impl.cc
+    reed_solomon_dec_isdbt_impl.cc
+    tmcc_encoder_impl.cc
+    pilot_signals_impl.cc
+    frequency_interleaver_impl.cc
+    time_interleaver_impl.cc
+    hierarchical_combinator_impl.cc
+    carrier_modulation_impl.cc
+    byte_interleaver_impl.cc
+    energy_dispersal_impl.cc
+    subset_of_carriers_impl.cc
 )
 
 set(isdbt_sources "${isdbt_sources}" PARENT_SCOPE)
@@ -20,8 +39,9 @@ if(NOT isdbt_sources)
     return()
 endif(NOT isdbt_sources)
 
+find_package(Gnuradio "3.10" REQUIRED COMPONENTS blocks fft filter fec volk)
 add_library(gnuradio-isdbt SHARED ${isdbt_sources})
-target_link_libraries(gnuradio-isdbt gnuradio::gnuradio-runtime)
+target_link_libraries(gnuradio-isdbt gnuradio::gnuradio-runtime gnuradio::gnuradio-blocks gnuradio::gnuradio-fft gnuradio::gnuradio-filter gnuradio::gnuradio-fec Volk::volk)
 target_include_directories(gnuradio-isdbt
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     PUBLIC $<INSTALL_INTERFACE:include>
@@ -33,6 +53,44 @@ if(APPLE)
         INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/lib"
     )
 endif(APPLE)
+
+####################
+# This should check if SSE2 is available or not (necessary for the viterbi decoder)
+####################
+
+include (CheckCCompilerFlag)
+if (MSVC)
+    # 64-bit MSVC always supports SSE2
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(SSE2_SUPPORTED true)
+    else()
+        check_c_compiler_flag("/arch:SSE2" SSE2_SUPPORTED)
+    endif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+else ()
+    # The "correct" way to test this would be to run
+    # check_c_compiler_flag("-msse2")
+    # ...but that's not reliable, in particular, on Clang and ARM, it will
+    # return TRUE when it shouldn't. Hence, we compile this snippet
+    # manually.
+    #check_c_source_compiles(
+    #    "#include <emmintrin.h>\nint main(){__m128i m0, m1, m2; m0 = _mm_add_epi8(m1, m2);}"
+    #    SSE2_SUPPORTED
+    #)
+endif(MSVC)
+
+if(SSE2_SUPPORTED)
+    if(NOT MSVC)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2")
+    else()
+        if (CMAKE_SIZEOF_VOID_P EQUAL 4)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:SSE2")
+        endif ()
+    endif()
+    add_definitions(-DDTV_SSE2=1)
+else()
+    message(STATUS "SSE2 not supported on this platform.")
+endif(SSE2_SUPPORTED)
+
 
 ########################################################################
 # Install built library files
